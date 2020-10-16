@@ -1,172 +1,112 @@
 <?php
-/**
- * Plugin Name: Woo Custom Stock Status
- * Description: This plugin is used to write the custom stock status for woocommerce products, let users to know exact stock status names in product details page.
- * Author: Softound Solutions
- * Version: 1.0.0
- * Author URI: http://softound.com/
- */
+/*
+Plugin Name: Woo Custom Stock Status
+Plugin URI:  https://www.softound.com/
+Description: Write the custom stock status with different colors for each woocommerce product, to show in product details and listing pages.
+Version:     1.2.4
+Author:      Softound Solutions
+Author URI:  https://www.softound.com/
+License:     GPL2
+License URI: https://www.gnu.org/licenses/gpl-2.0.html
+Text Domain: woo-custom-stock-status
+*/
 
 defined( 'ABSPATH' ) or die( 'No script kiddies please!' );
 
-class WooCustomStockStatus {
+/**
+* Main Woocommerce Stock status class
+*/
+class WC_Custom_Stock_status {
 
 	/**
-	 * Default default stock status and its names
+	 * Instance of this class.
+	 *
+	 * @since    1.0.0
+	 *
+	 * @var      object
 	 */
-	private $status_array = array(
-							'in_stock' 				=> 'In stock',
-							'only_s_left_in_stock' 	=> 'Only %s left in stock',
-							'can_be_backordered' 	=> '(can be backordered)',
-							's_in_stock'			=> '%s in stock',
-							'available_on_backorder'=> 'Available on backorder',
-							'out_of_stock' 			=> 'Out of stock',
-						);
-	
+	protected static $instance = null;
+
+	/**
+	 * Instance of base class
+	 *
+	 * @since 1.1.0
+	 */
+	public $stock_base = null;
+
+	/**
+	 * Instance of Setting class
+	 *
+	 * @since 1.1.0
+	 */
+	public $stock_setting = null;
+
+	/**
+	 * Instance of Product class
+	 *
+	 * @since 1.1.0
+	 */
+	public $stock_product = null;
+
+	/**
+	 * Main WC_Custom_Stock_status Instance.
+	 *
+	 * Ensures only one instance of WC_Custom_Stock_status is loaded or can be loaded.
+	 *
+	 * @since 1.1.0
+	 * @static
+	 * @return WC_Custom_Stock_status - Main instance.
+	 */
+	public static function instance() {
+		if ( is_null( self::$instance ) ) {
+			self::$instance = new self();
+		}
+		return self::$instance;
+	}
+
+	/**
+	 * WC_Custom_Stock_status Constructor.
+	 */
 	public function __construct() {
-		add_filter( 'woocommerce_settings_tabs_array', array( $this , 'add_settings_tab' ) , 50 );
-		add_action( 'woocommerce_settings_tabs_wc_stock_list_rename',array( $this ,'settings_tab' ));
-		add_action( 'woocommerce_update_options_wc_stock_list_rename',array( $this ,'update_settings' ));
-		add_filter( 'woocommerce_get_availability', array( $this,'woo_rename_stock_status' ) , 10 , 2);
+		$this->includes();
+		// init other classes
+		$this->stock_base = new Woo_Stock_Base();
+		$this->stock_setting = new Woo_Stock_Setting();
+		$this->stock_product = new Woo_Stock_Product();
 	}
-	
+
 	/**
-	 * Add a new settings tab to the WooCommerce settings tabs array.
-	 *
-	 * @param array $settings_tabs Array of WooCommerce setting tabs & their labels, excluding the Subscription tab.
-	 * @return array $settings_tabs Array of WooCommerce setting tabs & their labels, including the Subscription tab.
+	 * Include required core files used in admin and on the frontend.
 	 */
-	public function add_settings_tab( $settings_tabs ) {
-		$settings_tabs['wc_stock_list_rename'] = __( 'Custom Stock', 'woo-custom-stock-status' );
-		return $settings_tabs;
-	}
-	
-	/**
-	 * Uses the WooCommerce admin fields API to output settings via the @see woocommerce_admin_fields() function.
-	 *
-	 * @uses woocommerce_admin_fields()
-	 * @uses $this->get_settings()
-	 */
-	public function settings_tab() {
-		woocommerce_admin_fields( $this->get_settings() );
-	}
-	
-	
-	/**
-	 * Uses the WooCommerce options API to save settings via the @see woocommerce_update_options() function.
-	 *
-	 * @uses woocommerce_update_options()
-	 * @uses $this->get_settings()
-	 */
-	public function update_settings() {
-		woocommerce_update_options( $this->get_settings() );
-	}
-	
-	/**
-	 * Get all the settings for this plugin for @see woocommerce_admin_fields() function.
-	 *
-	 * @return array Array of settings for @see woocommerce_admin_fields() function.
-	 */
-	public function get_settings() {
-		
-		$settings['section_title'] = array(
-				'name'     => __( 'Custom Stock Status', 'woo-custom-stock-status' ),
-				'type'     => 'title',
-				'desc'     => '',
-				'id'       => 'wc_wc_stock_list_rename_section_title'
-			);
-		
-		foreach($this->status_array as $status=>$label){
-			$settings[$status] =  array(
-				'name' => __( $label, 'woo-custom-stock-status' ),
-				'type' => 'text',
-				'desc'     => '',
-				'id'   => 'wc_slr_'.$status,
-				'class' => 'large-text'
-			);
-		}
-		
-		$settings['section_end'] = array(
-				 'type' => 'sectionend',
-				 'id' => 'wc_wc_stock_list_rename_section_end'
-			);
-		return apply_filters( 'wc_wc_stock_list_rename_settings', $settings );
+	public function includes() {
+		require_once( 'includes/class-wc-stock-base.php' ); 
+		require_once( 'includes/class-wc-stock-setting.php' ); 
+		require_once( 'includes/class-wc-stock-product.php' ); 
 	}
 
-	/*
-	 * Rename the default stock list names based on admin settings
-	 */
-	public function woo_rename_stock_status( $message_array ,  $this_obj ) {
-	
-		$availability = $class = '';
-		
-		foreach($this->status_array as $status=>$label){
-			$$status = $label;
-		}
-				
-		foreach($this->status_array as $status=>$label){
-			$$status = (get_option('wc_slr_'.$status,$$status)=='') ? $$status : get_option('wc_slr_'.$status,$$status);
-		}
-		
-		if ( $this_obj->managing_stock() ) {
-
-			if ( $this_obj->is_in_stock() && $this_obj->get_total_stock() > get_option( 'woocommerce_notify_no_stock_amount' ) ) {
-
-				switch ( get_option( 'woocommerce_stock_format' ) ) {
-
-					case 'no_amount' :
-						$availability = __( $in_stock, 'woocommerce' );
-					break;
-
-					case 'low_amount' :
-						if ( $this_obj->get_total_stock() <= get_option( 'woocommerce_notify_low_stock_amount' ) ) {
-							$availability = sprintf( __( $only_s_left_in_stock, 'woocommerce' ), $this_obj->get_total_stock() );
-
-							if ( $this_obj->backorders_allowed() && $this_obj->backorders_require_notification() ) {
-								$availability .= ' ' . __( $can_be_backordered, 'woocommerce' );
-							}
-						} else {
-							$availability = __( $in_stock, 'woocommerce' );
-						}
-					break;
-
-					default :
-						$availability = sprintf( __( $s_in_stock, 'woocommerce' ), $this_obj->get_total_stock() );
-
-						if ( $this_obj->backorders_allowed() && $this_obj->backorders_require_notification() ) {
-							$availability .= ' ' . __( $can_be_backordered, 'woocommerce' );
-						}
-					break;
-				}
-
-				$class        = 'in-stock';
-
-			} elseif ( $this_obj->backorders_allowed() && $this_obj->backorders_require_notification() ) {
-
-				$availability = __( $available_on_backorder, 'woocommerce' );
-				$class        = 'available-on-backorder';
-
-			} elseif ( $this_obj->backorders_allowed() ) {
-
-				$availability = __( $in_stock, 'woocommerce' );
-				$class        = 'in-stock';
-
-			} else {
-
-				$availability = __( $out_of_stock, 'woocommerce' );
-				$class        = 'out-of-stock';
-			}
-
-		} elseif ( ! $this_obj->is_in_stock() ) {
-
-			$availability = __( $out_of_stock, 'woocommerce' );
-			$class        = 'out-of-stock';
-		}
-		
-		$message_array['availability'] = $availability;
-		$message_array['class'] = $class;
-		return $message_array;
+	public static function deactive_error_notice() {
+	  printf('<div class="error notice is-dismissible"><p>%1$s</p></div>',__( 'Please install WooCommerce, it is required for this plugin to work properly!', 'wc-stock-status' ));
 	}
 }
-$woo_custom_stock_status_obj = new WooCustomStockStatus();
+
+/**
+ * Check if WooCommerce is active
+ **/
+if ( ! function_exists( 'is_plugin_active' ) ) {
+	include_once( ABSPATH . 'wp-admin/includes/plugin.php' );
+}
+if ( ! is_plugin_active( 'woocommerce/woocommerce.php' ) ) {
+	deactivate_plugins( plugin_dir_path( __FILE__ ) . 'woo-custom-stock-status.php', false );
+	add_action( 'admin_notices' , array( 'WC_Custom_Stock_status' , 'deactive_error_notice' ) );
+} else {
+
+	/**
+	 * Main instance of Main Woocommerce Stock status.
+	 * @since  1.1.0
+	 */
+	WC_Custom_Stock_status::instance();
+}
+
+
+
 ?>
